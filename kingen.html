@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>KineGen: Dynamic Prosthetic Foot Designer</title>
+
+  <!-- UI / Fonts -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- three.js + GSAP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; background:#1f2937; color:#e5e7eb; }
+    .panel {
+      background: rgba(30,41,59,.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: .75rem;
+    }
+    #viewer { width:100%; height:100%; display:block; }
+    .control-label { color:#93c5fd; font-weight:500; }
+    .param-value { color:#e5e7eb; font-weight:600; }
+    .stat-value { font-size:1.5rem; font-weight:700; color:#bfdbfe; }
+    input[type="range"]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; background:#4b5563; border-radius:5px; outline:none; }
+    input[type="range"]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:18px; height:18px; background:#93c5fd; border-radius:50%; cursor:pointer; }
+    select { background-color:#374151; border-color:#4b5563; }
+    .btn-primary { background:#2563eb; } .btn-primary:hover{ background:#1d4ed8; }
+    .btn-secondary { background:#4b5563; } .btn-secondary:hover{ background:#374151; }
+  </style>
+</head>
+<body class="overflow-hidden">
+  <div id="app" class="h-screen w-screen flex flex-col lg:flex-row p-4 gap-4">
+    <!-- Left Panel -->
+    <div class="panel w-full lg:w-1/4 flex flex-col p-4 shadow-2xl">
+      <div class="flex items-center border-b border-slate-600 pb-3 mb-4">
+        <svg class="w-8 h-8 text-blue-300 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-2.25-1.313M21 7.5v2.25m0-2.25l-2.25 1.313M3 7.5l2.25-1.313M3 7.5l2.25 1.313M3 7.5v2.25m9 3l2.25-1.313M12 12.75l-2.25-1.313M12 12.75V15m0-2.25l2.25 1.313M4.5 15.75l2.25-1.313M4.5 15.75l2.25 1.313M4.5 15.75V18m15-2.25l-2.25-1.313M19.5 15.75l-2.25 1.313M19.5 15.75V18M9 21V9.75l2.25-1.313M9 21l-2.25-1.313M9 21l2.25 1.313M15 21V9.75l-2.25-1.313M15 21l2.25-1.313M15 21l-2.25 1.313M12 3v2.25" />
+        </svg>
+        <h1 class="text-xl font-bold text-white">KineGen</h1>
+      </div>
+
+      <div class="flex-grow overflow-y-auto pr-2 space-y-6">
+        <!-- Design -->
+        <div>
+          <h2 class="font-semibold text-lg mb-3 text-white">1. Design Parameters</h2>
+          <div class="space-y-4">
+            <div>
+              <label for="c-curve" class="control-label">C-Curve Height</label>
+              <div class="flex justify-between text-sm"><p>Lower</p><p>Higher</p></div>
+              <input type="range" id="c-curve" min="3" max="6" value="4.5" step="0.1">
+            </div>
+            <div>
+              <label for="stiffness" class="control-label">Heel Stiffness</label>
+              <div class="flex justify-between text-sm"><p>Softer</p><p>Stiffer</p></div>
+              <input type="range" id="stiffness" min="0.2" max="1.0" value="0.6" step="0.05">
+            </div>
+            <div>
+              <label for="toe-length" class="control-label">Toe-Off Length</label>
+              <div class="flex justify-between text-sm"><p>Shorter</p><p>Longer</p></div>
+              <input type="range" id="toe-length" min="6" max="10" value="8" step="0.1">
+            </div>
+          </div>
+        </div>
+
+        <!-- Material -->
+        <div>
+          <h2 class="font-semibold text-lg mb-3 text-white">2. Material Selection</h2>
+          <select id="material-select" class="w-full p-2 rounded-md border text-white">
+            <option value="carbon">Carbon Fiber Composite</option>
+            <option value="titanium">Titanium Alloy</option>
+            <option value="aluminum">Aluminum Alloy</option>
+          </select>
+        </div>
+
+        <!-- Analysis -->
+        <div>
+          <h2 class="font-semibold text-lg mb-3 text-white">3. Analysis</h2>
+          <button id="analyze-btn" class="w-full btn-primary text-white font-bold py-2 px-4 rounded-md transition duration-300">
+            Analyze Design
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Viewer -->
+    <div id="viewer-container" class="panel flex-grow relative overflow-hidden">
+      <div id="viewer"></div>
+      <div id="gait-phase-overlay" class="absolute top-4 left-4 bg-black/30 p-2 px-4 rounded-lg text-lg font-semibold text-white z-10 hidden">
+        Gait Phase: <span id="gait-phase-text"></span>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="panel w-full lg:w-1/4 flex flex-col p-4 shadow-2xl">
+      <h2 class="text-xl font-bold text-white border-b border-slate-600 pb-3 mb-4">Performance Analysis</h2>
+      <div id="analysis-content" class="flex-grow space-y-4 text-center">
+        <p id="pre-analysis-text" class="text-slate-400 text-center pt-10">
+          Design a prosthetic foot and click “Analyze Design” to view performance metrics.
+        </p>
+        <div id="results-grid" class="hidden grid grid-cols-2 gap-4">
+          <div class="bg-slate-900/50 p-3 rounded-lg">
+            <p class="control-label text-sm">Energy Return</p>
+            <p id="energy-stat" class="stat-value">0%</p>
+          </div>
+          <div class="bg-slate-900/50 p-3 rounded-lg">
+            <p class="control-label text-sm">Peak Stress</p>
+            <p id="stress-stat" class="stat-value">0 MPa</p>
+          </div>
+          <div class="bg-slate-900/50 p-3 rounded-lg">
+            <p class="control-label text-sm">Weight</p>
+            <p id="weight-stat" class="stat-value">0 g</p>
+          </div>
+          <div class="bg-slate-900/50 p-3 rounded-lg">
+            <p class="control-label text-sm">Gait Symmetry</p>
+            <p id="symmetry-stat" class="stat-value">0%</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // ====== Scene & App State ======
+    let scene, camera, renderer, prostheticFoot, pylon, ground;
+    let isAnalyzing = false;
+
+    const designParams = { cCurve: 4.5, stiffness: 0.6, toeLength: 8 };
+    const materialProps = {
+      carbon:   { density: 1.8, strength: 600, stiffness: 150 },
+      titanium: { density: 4.5, strength: 950, stiffness: 114 },
+      aluminum: { density: 2.7, strength: 310, stiffness: 69 }
+    };
+
+    // DOM
+    const sliders = {
+      cCurve: document.getElementById('c-curve'),
+      stiffness: document.getElementById('stiffness'),
+      toeLength: document.getElementById('toe-length')
+    };
+    const materialSelect = document.getElementById('material-select');
+    const analyzeBtn = document.getElementById('analyze-btn');
+
+    const preText = document.getElementById('pre-analysis-text');
+    const resultsGrid = document.getElementById('results-grid');
+    const overlay = document.getElementById('gait-phase-overlay');
+    const overlayText = document.getElementById('gait-phase-text');
+
+    // ====== Builders ======
+    function disposeMesh(mesh){
+      if (!mesh) return;
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) {
+        if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
+        else mesh.material.dispose();
+      }
+      scene.remove(mesh);
+    }
+
+    function createProstheticFoot(){
+      // Curve: forefoot to heel “C” + stiffness shaping
+      const c = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(designParams.toeLength/2, 0, 0),                   // toe
+        new THREE.Vector3(0, 1, 0),                                         // mid
+        new THREE.Vector3(-designParams.stiffness*5, designParams.cCurve,0),// heel rise
+        new THREE.Vector3(-designParams.stiffness*5 - 2, designParams.cCurve, 0) // socket side
+      ]);
+      const geom = new THREE.TubeGeometry(c, 64, 0.5, 16, false);
+      geom.computeVertexNormals();
+
+      // Vertex colors (start blue, FEA will recolor)
+      const count = geom.attributes.position.count;
+      const cols = new Float32Array(count * 3);
+      for (let i=0;i<count;i++){ cols[i*3+0]=0; cols[i*3+1]=0; cols[i*3+2]=1; }
+      geom.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+
+      const mat = new THREE.MeshStandardMaterial({ vertexColors:true, metalness:0.6, roughness:0.35 });
+
+      // Replace old
+      disposeMesh(prostheticFoot);
+      prostheticFoot = new THREE.Mesh(geom, mat);
+      scene.add(prostheticFoot);
+    }
+
+    function updateDesign(){
+      if (isAnalyzing) return;
+      designParams.cCurve   = parseFloat(sliders.cCurve.value);
+      designParams.stiffness= parseFloat(sliders.stiffness.value);
+      designParams.toeLength= parseFloat(sliders.toeLength.value);
+      createProstheticFoot();
+    }
+
+    // ====== Analysis & FEA coloring ======
+    function runAnalysis(){
+      if (isAnalyzing) return;
+      isAnalyzing = true;
+      analyzeBtn.disabled = true;
+      analyzeBtn.textContent = "Analyzing…";
+      preText.classList.add('hidden');
+      resultsGrid.classList.remove('hidden');
+      overlay.classList.remove('hidden');
+
+      const mat = materialProps[materialSelect.value];
+
+      // Toy metrics (illustrative only)
+      const energyReturn = Math.max(0, (designParams.cCurve*10) + (mat.stiffness/10) - (designParams.stiffness*5));
+      const peakStress   = Math.max(0, (1/designParams.cCurve)*500 + (designParams.stiffness*100) - (mat.strength/20));
+      const weight       = Math.max(0, (designParams.cCurve*designParams.toeLength)*mat.density*5);
+      const symmetry     = Math.max(0, Math.min(100, 100 - Math.abs(75 - energyReturn) - Math.abs(500 - weight)/10));
+
+      document.getElementById('energy-stat').textContent  = `${energyReturn.toFixed(0)}%`;
+      document.getElementById('stress-stat').textContent  = `${peakStress.toFixed(0)} MPa`;
+      document.getElementById('weight-stat').textContent  = `${weight.toFixed(0)} g`;
+      document.getElementById('symmetry-stat').textContent= `${symmetry.toFixed(0)}%`;
+
+      const tl = gsap.timeline({
+        onComplete: ()=>{
+          isAnalyzing = false;
+          analyzeBtn.disabled = false;
+          analyzeBtn.textContent = "Analyze Design";
+          overlay.classList.add('hidden');
+          // Neutral pose
+          gsap.to(prostheticFoot.rotation, { z:0, duration:.4 });
+          gsap.to(prostheticFoot.position, { y:0, duration:.4 });
+          updateFEA(0, 'none');
+        }
+      });
+
+      // Heel strike
+      tl.to(prostheticFoot.rotation, { z:-0.3, duration:.5, ease:"power1.in" })
+        .call(()=>{ overlayText.textContent="Heel Strike"; updateFEA(.8,'heel'); })
+        .to(prostheticFoot.rotation, { z:0, duration:.5 });
+
+      // Mid-stance
+      tl.to(prostheticFoot.position, { y:-designParams.cCurve/3, duration:.7, ease:"power1.inOut" })
+        .call(()=>{ overlayText.textContent="Mid-Stance"; updateFEA(1.0,'full'); })
+        .to(prostheticFoot.position, { y:0, duration:.7, ease:"bounce.out" });
+
+      // Toe-off
+      tl.to(prostheticFoot.rotation, { z:0.4, duration:.6, ease:"power2.out" })
+        .call(()=>{ overlayText.textContent="Toe-Off"; updateFEA(.9,'toe'); });
+    }
+
+    function updateFEA(stressLevel, region='none'){
+      if (!prostheticFoot) return;
+      const geom = prostheticFoot.geometry;
+      const colors = geom.attributes.color;
+      const pos = geom.attributes.position;
+      const color = new THREE.Color();
+
+      const halfLen = designParams.toeLength/2;
+      for (let i=0;i<pos.count;i++){
+        let local = 0;
+        const x = pos.getX(i);
+
+        if (region==='heel' && x < -2) local = stressLevel;
+        else if (region==='toe' && x >  2) local = stressLevel;
+        else if (region==='full') local = stressLevel * (1 - Math.min(1, Math.abs(x)/halfLen));
+
+        // Map stress (0→blue, 1→red) via HSL
+        color.setHSL(0.66*(1-local), 1.0, 0.5);
+        colors.setXYZ(i, color.r, color.g, color.b);
+      }
+      colors.needsUpdate = true;
+    }
+
+    // ====== Init ======
+    function init(){
+      scene = new THREE.Scene();
+
+      const container = document.getElementById('viewer-container');
+      camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 1000);
+      camera.position.set(0, 2, 12);
+      camera.lookAt(0, 2, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      document.getElementById('viewer').appendChild(renderer.domElement);
+
+      // Lighting
+      scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+      const dir = new THREE.DirectionalLight(0xffffff, 1.05);
+      dir.position.set(5,10,7.5);
+      scene.add(dir);
+
+      // Ground grid (subtle depth cue)
+      const grid = new THREE.GridHelper(60, 30, 0x334155, 0x1f2937);
+      grid.position.y = -0.01;
+      scene.add(grid);
+
+      // Pylon (attachment)
+      pylon = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.3, 0.3, 4, 20),
+        new THREE.MeshStandardMaterial({ color:0x64748b, metalness:0.8, roughness:0.25 })
+      );
+      pylon.position.set(-5, 6, 0);
+      scene.add(pylon);
+
+      updateDesign();
+
+      // Events
+      Object.values(sliders).forEach(s => s.addEventListener('input', updateDesign));
+      materialSelect.addEventListener('input', updateDesign);
+      analyzeBtn.addEventListener('click', runAnalysis);
+      window.addEventListener('resize', ()=>{
+        camera.aspect = container.clientWidth/container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight); // FIX: viewerContainer height
+      });
+
+      animate();
+    }
+
+    function animate(){
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+
+    init();
+  </script>
+</body>
+</html>
